@@ -1,0 +1,24 @@
+torch>=2.1
+torchvision>=0.16
+transformers>=4.40
+accelerate>=0.28
+peft>=0.10
+datasets>=2.18
+decord>=0.6.0
+av>=11.0
+opencv-python>=4.8
+numpy>=1.24
+pandas>=2.0
+tqdm>=4.66
+pyyaml>=6.0
+pillow>=10.0
+sentencepiece>=0.1.99
+openai>=1.12
+
+# Optional heavy deps for larger teacher models.
+# bitsandbytes is for 4-bit/8-bit teacher loading on supported GPUs.
+bitsandbytes>=0.42; platform_system == "Linux"
+
+# Optional teacher repos (install manually if needed):
+# open_flamingo: https://github.com/mlfoundations/open_flamingo
+# chat-univl: https://github.com/showlab/Chat-UniVL

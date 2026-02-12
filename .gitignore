@@ -1,0 +1,18 @@
+.venv/
+__pycache__/
+*.py[cod]
+
+# Local IDE/runtime files
+.DS_Store
+.pytest_cache/
+
+# Large data and generated artifacts
+data/msrvtt_frames/
+data/msrvtt_raw/
+data/teacher_cache/
+runs/
+
+# Keep only small toy examples if needed
+!data/
+!data/toy/
+!data/toy/*.jsonl
