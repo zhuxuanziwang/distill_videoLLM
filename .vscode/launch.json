@@ -1,0 +1,71 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug Teacher Cache (train)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/build_teacher_cache.py",
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "args": [
+        "--input_jsonl",
+        "data/teacher_cache/train.videollava.jsonl",
+        "--output_jsonl",
+        "data/teacher_cache/train.videollava.redo.jsonl",
+        "--teacher_name",
+        "videollava",
+        "--model_id",
+        "LanguageBind/Video-LLaVA-7B-hf",
+        "--device",
+        "cuda:0",
+        "--dtype",
+        "fp16",
+        "--num_video_frames",
+        "8",
+        "--max_new_tokens",
+        "8",
+        "--d_model",
+        "512"
+      ]
+    },
+    {
+      "name": "Debug Teacher Cache (val)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/build_teacher_cache.py",
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "args": [
+        "--input_jsonl",
+        "data/teacher_cache/val.videollava.jsonl",
+        "--output_jsonl",
+        "data/teacher_cache/val.videollava.redo.jsonl",
+        "--teacher_name",
+        "videollava",
+        "--model_id",
+        "LanguageBind/Video-LLaVA-7B-hf",
+        "--device",
+        "cuda:0",
+        "--dtype",
+        "fp16",
+        "--num_video_frames",
+        "8",
+        "--max_new_tokens",
+        "8",
+        "--d_model",
+        "512"
+      ]
+    }
+  ]
+}
