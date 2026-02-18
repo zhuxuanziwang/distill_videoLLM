@@ -2,6 +2,44 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Debug Train (MSRVTT Hybrid)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/train.py",
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "args": [
+        "--data_dir",
+        "data/teacher_cache",
+        "--train_file",
+        "train.videollava.redo.jsonl",
+        "--val_file",
+        "val.videollava.redo.jsonl",
+        "--tokenizer",
+        "clip",
+        "--clip_model_id",
+        "openai/clip-vit-base-patch16",
+        "--image_size",
+        "224",
+        "--d_model",
+        "512",
+        "--distill_mode",
+        "hybrid",
+        "--out_dir",
+        "runs/msrvtt_clipvitb16_hybrid_debug",
+        "--debug_model_prints",
+        "--debug_forward_print_steps",
+        "2",
+        "--debug_grad_print_steps",
+        "2"
+      ]
+    },
+    {
       "name": "Debug Teacher Cache (train)",
       "type": "debugpy",
       "request": "launch",
@@ -65,6 +103,27 @@
         "8",
         "--d_model",
         "512"
+      ]
+    },
+    {
+      "name": "Debug Eval (best checkpoint)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/eval.py",
+      "cwd": "${workspaceFolder}",
+      "python": "${workspaceFolder}/.venv/bin/python",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+      },
+      "args": [
+        "--data_dir",
+        "data/teacher_cache",
+        "--split_file",
+        "test.videollava.redo.jsonl",
+        "--checkpoint",
+        "runs/msrvtt_clipvitb16_hybrid_debug/best.pt"
       ]
     }
   ]
