@@ -1,25 +1,12 @@
 # distill_videoLLM
 
-# CaTeR 复现项目（Mini Suite）
+本仓库是 CaTeR 风格的可复现实验工程。当前文档聚焦 **MSRVTT-QA** 单数据集，覆盖以下实验：
 
-这个仓库提供了一个可运行的 CaTeR 风格实验框架，并支持论文常见对比开关：
-
-- 学生模型：冻结 CLIP 风格双编码器 + 事件级 prompt 跨模态注意力 + 时序适配器
-- 蒸馏模式：`none / hard / soft / hybrid`
 - Prompt 消融：`none / random / frame / event`
-- Teacher 消融：`videollava / flamingo / chatunivl`（仅真实 teacher 路径）
+- 蒸馏策略消融：`none / hard / soft / hybrid`
+- LLM 生成器消融：`gpt4 / vicuna / mistral / llama3`（基于固定视觉摘要）
 
-目标是先把论文流程跑通，并在小数据上完成结构化对比实验。
-
-## 论文数据集与官方划分
-
-- TVQA：`80k / 7k / 7k`
-- ActivityNet-QA：`50k / 5k / 3k`
-- MSRVTT-QA：`9k / 500 / 500`
-
-可使用 `scripts/make_mini_split.py` 从完整 jsonl 划分中抽取小子集，方便快速迭代。
-
-## 安装环境
+## 1. 环境
 
 ```bash
 cd cater_repro_minimal
@@ -27,137 +14,28 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-如果当前环境网络受限，可使用已有环境：
+## 2. 数据准备（MSRVTT-QA）
 
-```bash
-./setup_env.sh
-source ../parallel_minimal/.venv/bin/activate
+### 2.1 原始数据
+
+你需要本地具备：
+
+- `MSRVTT-QA` 标注：`train_qa.json / val_qa.json / test_qa.json`
+- `MSRVTT` 视频：`video*.mp4`
+
+建议目录：
+
+```text
+data/msrvtt_raw/msrvtt_qa/MSRVTT-QA/
+  ├─ train_qa.json
+  ├─ val_qa.json
+  ├─ test_qa.json
+  └─ video/
+      ├─ video0.mp4
+      └─ ...
 ```
 
-## 数据格式（jsonl）
-
-每一行至少应包含如下字段：
-
-```json
-{
-  "id": "sample-id",
-  "dataset": "tvqa|activitynet_qa|msrvtt_qa|toy",
-  "question": "question text",
-  "choices": ["a", "b", "c", "d", "e"],
-  "answer_idx": 0,
-  "event_prompts": ["...", "..."],
-  "frame_prompts": ["...", "..."],
-  "frame_paths": ["path/to/frame1.jpg", "..."],
-  "teacher_embedding": [0.1, -0.2],
-  "teacher_hard_idx": 0
-}
-```
-
-说明：
-- `frame_paths` 可选；如果没有该字段，会退回到 toy 的伪帧渲染模式
-- `teacher_embedding` 和 `teacher_hard_idx` 可后续用 `build_teacher_cache.py` 回填
-
-## 快速冒烟测试
-
-```bash
-cd cater_repro_minimal
-PATH="../parallel_minimal/.venv/bin:$PATH" bash run_smoke.sh
-```
-
-## 生成 toy 数据
-
-```bash
-python scripts/make_toy_data.py --out_dir data/toy --d_model 256
-```
-
-## 训练与评估
-
-```bash
-python train.py \
-  --data_dir data/toy \
-  --train_file train.jsonl \
-  --val_file val.jsonl \
-  --d_model 256 \
-  --prompt_variant event \
-  --distill_mode hybrid \
-  --out_dir runs/exp_event_hybrid
-
-python eval.py \
-  --data_dir data/toy \
-  --split_file test.jsonl \
-  --checkpoint runs/exp_event_hybrid/best.pt
-```
-
-## 生成 Teacher Cache（真实）
-
-下面是生成 real teacher cache（用于 teacher 消融）的示例：
-
-```bash
-python scripts/build_teacher_cache.py \
-  --input_jsonl data/tvqa_mini/train.jsonl \
-  --output_jsonl data/teacher_cache/train.videollava.jsonl \
-  --teacher_name videollava \
-  --model_id LanguageBind/Video-LLaVA-7B-hf \
-  --device cuda:0 \
-  --dtype fp16 \
-  --num_video_frames 8 \
-  --max_new_tokens 8 \
-  --d_model 512
-```
-
-`--teacher_name` 支持：`videollava`、`flamingo`、`chatunivl`。  
-当前 real 推理已实现：`videollava`；`flamingo/chatunivl` 仍需你接入各自推理代码。
-
-## 接入真实 Video-LLaVA
-
-`VideoLLaVA` real 已接在 `cater/teachers.py`。
-
-前置条件：
-
-1. 每条 jsonl 样本必须提供 `frame_paths`（RGB 帧路径列表）
-2. 环境需安装依赖：`transformers`、`accelerate`、`decord/av`（可选 `bitsandbytes`）
-3. 建议使用 GPU
-
-示例命令：
-
-```bash
-python scripts/build_teacher_cache.py \
-  --input_jsonl data/tvqa_mini/train.jsonl \
-  --output_jsonl data/tvqa_mini_teacher/train.videollava.real.jsonl \
-  --teacher_name videollava \
-  --model_id LanguageBind/Video-LLaVA-7B-hf \
-  --device cuda:0 \
-  --dtype fp16 \
-  --num_video_frames 8 \
-  --max_new_tokens 8 \
-  --d_model 512
-```
-
-低显存模式（可选）：
-
-```bash
-python scripts/build_teacher_cache.py ... --load_in_4bit
-```
-
-使用 real teacher cache 训练学生模型：
-
-```bash
-python train.py \
-  --data_dir data/tvqa_mini_teacher \
-  --train_file train.videollava.real.jsonl \
-  --val_file val.videollava.real.jsonl \
-  --prompt_variant event \
-  --distill_mode hybrid \
-  --d_model 512 \
-  --out_dir runs/tvqa_videollava_real
-```
-
-## 从 MSRVTT-QA 原始数据开始（推荐流程）
-
-1. 准备视频文件：把 `MSR-VTT` 的 `.mp4` 放到  
-`data/msrvtt_raw/msrvtt_qa/MSRVTT-QA/video/`
-
-2. 抽帧（均匀采样）：
+### 2.2 抽帧（224）
 
 ```bash
 python scripts/extract_msrvtt_frames.py \
@@ -167,15 +45,11 @@ python scripts/extract_msrvtt_frames.py \
   --image_size 224
 ```
 
-3. 转换标注为训练 jsonl（多选格式）并直接用 OpenAI 生成 event-level prompts：
-
-先设置 OpenAI Key：
+### 2.3 生成训练 JSONL（含 event prompts）
 
 ```bash
 export OPENAI_API_KEY=你的key
-```
 
-```bash
 python scripts/prepare_msrvtt_jsonl.py \
   --qa_dir data/msrvtt_raw/msrvtt_qa/MSRVTT-QA \
   --frames_root data/msrvtt_frames \
@@ -185,7 +59,7 @@ python scripts/prepare_msrvtt_jsonl.py \
   --openai_model gpt-4o-mini
 ```
 
-4. 先做 mini 子集（可选）：
+可选做小规模快速迭代：
 
 ```bash
 python scripts/make_mini_split.py \
@@ -194,38 +68,156 @@ python scripts/make_mini_split.py \
   --train_n 2000 --val_n 400 --test_n 400
 ```
 
-5. 基于 LLM prompts 生成 real Video-LLaVA teacher cache：
+## 3. 生成 Teacher Cache（Video-LLaVA）
+
+示例（以 mini 为例）：
 
 ```bash
-python scripts/build_teacher_cache.py \
-  --input_jsonl data/msrvtt_mini/train.jsonl \
-  --output_jsonl data/teacher_cache/train.videollava.jsonl \
-  --teacher_name videollava \
-  --model_id LanguageBind/Video-LLaVA-7B-hf \
-  --device cuda:0 \
-  --dtype fp16 \
-  --num_video_frames 8 \
-  --max_new_tokens 8 \
-  --d_model 512
+mkdir -p data/teacher_cache
+
+for s in train val test; do
+  python scripts/build_teacher_cache.py \
+    --input_jsonl data/msrvtt_mini/${s}.jsonl \
+    --output_jsonl data/teacher_cache/${s}.videollava.redo.jsonl \
+    --teacher_name videollava \
+    --model_id LanguageBind/Video-LLaVA-7B-hf \
+    --device cuda:0 \
+    --dtype fp16 \
+    --num_video_frames 8 \
+    --max_new_tokens 8 \
+    --d_model 512
+done
 ```
 
-## 运行 mini 论文实验套件
+说明：
 
-该脚本会自动跑三组实验：
+- `*.videollava.redo.jsonl` 包含 `teacher_hard_idx` 与 `teacher_embedding`。
+- 当前 real teacher 已实现：`videollava`。`flamingo/chatunivl` 仍是 TODO。
 
-1. Prompt 消融（`none/random/frame/event`）
-2. 蒸馏策略消融（`none/hard/soft/hybrid`）
-3. Teacher 消融（`videollava/flamingo/chatunivl`）
+## 4. 训练与评估（单次）
 
 ```bash
-PYTHON_BIN=../parallel_minimal/.venv/bin/python \
-DATA_DIR=./data/teacher_cache \
-D_MODEL=256 \
-EPOCHS=2 \
-bash scripts/run_paper_mini.sh
+python train.py \
+  --data_dir data/teacher_cache \
+  --train_file train.videollava.redo.jsonl \
+  --val_file val.videollava.redo.jsonl \
+  --dataset_name msrvtt_qa \
+  --tokenizer clip \
+  --clip_model_id openai/clip-vit-base-patch16 \
+  --image_size 224 \
+  --num_frames 8 \
+  --d_model 512 \
+  --prompt_variant event \
+  --distill_mode hybrid \
+  --epochs 5 \
+  --batch_size 16 \
+  --out_dir runs/msrvtt_single
+
+python eval.py \
+  --data_dir data/teacher_cache \
+  --split_file test.videollava.redo.jsonl \
+  --checkpoint runs/msrvtt_single/best.pt
 ```
 
-## Real Teacher 支持状态
+## 5. 一键跑三类消融 + 自动记录结果
 
-- `Video-LLaVA` real 后端已实现（模型加载 + hard/soft cache 提取）
-- `Flamingo` 与 `Chat-UniVL` 的 real 后端当前仍为 TODO 脚手架
+运行：
+
+```bash
+bash scripts/run_msrvtt_suite.sh
+```
+
+默认会执行：
+
+- Prompt 消融：`none/random/frame/event`（固定 `hybrid`）
+- Distill 消融：`none/hard/soft/hybrid`（固定 `event`）
+- LLM 生成器消融：`gpt4/vicuna/mistral/llama3`（读取 `train.prompt_<tag>.jsonl` 等文件）
+
+结果自动写入：
+
+```text
+runs/msrvtt_suite/results.csv
+```
+
+## 6. LLM 生成器消融（重点）
+
+### 6.1 为什么 Vicuna/Mistral/Llama-3 也能做 prompt 消融？
+
+这些模型本身是文本 LLM，不直接看帧。做法是两阶段：
+
+1. 先用多模态模型得到“固定视觉摘要”（本工程里可直接复用已有 `event_prompts`）。
+2. 再让文本 LLM 基于该摘要重写/生成 event-level prompts。
+
+这样做能比较“语言生成器能力”对最终性能的影响，同时尽量固定视觉信息来源。
+
+### 6.2 生成不同 LLM 的 prompt 版本
+
+先准备 `gpt4` 对照版本（直接复制）：
+
+```bash
+for s in train val test; do
+  cp data/teacher_cache/${s}.videollava.redo.jsonl data/teacher_cache/${s}.prompt_gpt4.jsonl
+done
+```
+
+再生成文本 LLM 版本（示例）：
+
+```bash
+# Vicuna
+for s in train val test; do
+  python scripts/regenerate_prompts_text_llm.py \
+    --input_jsonl data/teacher_cache/${s}.videollava.redo.jsonl \
+    --output_jsonl data/teacher_cache/${s}.prompt_vicuna.jsonl \
+    --model_id lmsys/vicuna-7b-v1.5 \
+    --source_prompt_field event_prompts \
+    --max_new_tokens 256
+done
+
+# Mistral
+for s in train val test; do
+  python scripts/regenerate_prompts_text_llm.py \
+    --input_jsonl data/teacher_cache/${s}.videollava.redo.jsonl \
+    --output_jsonl data/teacher_cache/${s}.prompt_mistral.jsonl \
+    --model_id mistralai/Mistral-7B-Instruct-v0.2 \
+    --source_prompt_field event_prompts \
+    --max_new_tokens 256
+done
+
+# Llama-3
+for s in train val test; do
+  python scripts/regenerate_prompts_text_llm.py \
+    --input_jsonl data/teacher_cache/${s}.videollava.redo.jsonl \
+    --output_jsonl data/teacher_cache/${s}.prompt_llama3.jsonl \
+    --model_id meta-llama/Meta-Llama-3-8B-Instruct \
+    --source_prompt_field event_prompts \
+    --max_new_tokens 256
+done
+```
+
+然后再执行：
+
+```bash
+bash scripts/run_msrvtt_suite.sh
+```
+
+## 7. 需要记录的实验参数与结果
+
+建议固定并记录：
+
+- 数据版本：`msrvtt_mini` 或全量；每个 split 样本数
+- `num_frames`、`image_size`
+- `tokenizer`、`clip_model_id`
+- `prompt_variant`
+- `distill_mode`、`lambda_hard`、`lambda_soft`
+- teacher 设置：`teacher_name/model_id/dtype/num_video_frames`
+- prompt 生成器：`gpt4 / vicuna / mistral / llama3`
+- 训练超参：`epochs / batch_size / lr / seed`
+- 指标：`val top1`、`test top1`
+
+`scripts/run_msrvtt_suite.sh` 会把大部分关键信息写到 `results.csv`。
+
+## 8. 当前与论文差异（透明说明）
+
+- 当前仅覆盖 MSRVTT-QA，不含 TVQA 和 ActivityNet-QA 全流程。
+- LLM 生成器消融采用“固定视觉摘要 + 文本 LLM 重写”策略；不是每个文本 LLM直接看原始帧。
+- 如果要更严格对齐论文，需要补齐 TVQA/ActivityNet、字幕上下文、以及更多 teacher 后端。
