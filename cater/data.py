@@ -6,7 +6,12 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset
 
-from .tokenizer import HashTokenizer
+_CLIP_MEAN = torch.tensor([0.48145466, 0.4578275, 0.40821073], dtype=torch.float32).view(3, 1, 1)
+_CLIP_STD = torch.tensor([0.26862954, 0.26130258, 0.27577711], dtype=torch.float32).view(3, 1, 1)
+
+
+def _normalize_clip(x: torch.Tensor) -> torch.Tensor:
+    return (x - _CLIP_MEAN) / _CLIP_STD
 
 
 def _render_frame(action_id: int, t: int, size: int, seed: int) -> torch.Tensor:
@@ -31,14 +36,14 @@ def _render_frame(action_id: int, t: int, size: int, seed: int) -> torch.Tensor:
     channel = action_id % 3
     frame[channel, y : y + block, x : x + block] += 0.4
 
-    return frame.clamp(0.0, 1.0)
+    return _normalize_clip(frame.clamp(0.0, 1.0))
 
 
 class ToyVideoQADataset(Dataset):
     def __init__(
         self,
         jsonl_path: str | Path,
-        tokenizer: HashTokenizer,
+        tokenizer,
         num_frames: int = 6,
         image_size: int = 96,
         prompt_len: int = 32,
@@ -122,14 +127,14 @@ def _load_frame_from_path(path: str, image_size: int) -> torch.Tensor:
         img = img.convert("RGB").resize((image_size, image_size), Image.BILINEAR)
         x = torch.tensor(list(img.getdata()), dtype=torch.float32).view(image_size, image_size, 3)
         x = x.permute(2, 0, 1) / 255.0
-    return x
+    return _normalize_clip(x)
 
 
 class VideoQADataset(Dataset):
     def __init__(
         self,
         jsonl_path: str | Path,
-        tokenizer: HashTokenizer,
+        tokenizer,
         num_frames: int = 6,
         image_size: int = 224,
         prompt_len: int = 32,

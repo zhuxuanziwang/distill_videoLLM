@@ -7,12 +7,24 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from cater import CaTeRMini, HashTokenizer, VideoQADataset, collate_batch
+from cater import CLIPTokenizerWrapper, CaTeRMini, HashTokenizer, VideoQADataset, collate_batch
 
 
 def set_seed(seed: int) -> None:
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+
+
+def _param_count(module: torch.nn.Module, trainable_only: bool = False) -> int:
+    if trainable_only:
+        return sum(p.numel() for p in module.parameters() if p.requires_grad)
+    return sum(p.numel() for p in module.parameters())
+
+
+def _safe_grad_norm(param: torch.nn.Parameter | None) -> float:
+    if param is None or param.grad is None:
+        return 0.0
+    return float(param.grad.norm().item())
 
 
 @torch.no_grad()
@@ -45,9 +57,11 @@ def main() -> None:
     parser.add_argument("--lr", type=float, default=5e-5)
     parser.add_argument("--weight_decay", type=float, default=1e-2)
     parser.add_argument("--num_frames", type=int, default=6)
-    parser.add_argument("--image_size", type=int, default=96)
+    parser.add_argument("--image_size", type=int, default=224)
     parser.add_argument("--prompt_len", type=int, default=32)
     parser.add_argument("--choice_len", type=int, default=64)
+    parser.add_argument("--tokenizer", type=str, default="clip", choices=["clip", "hash"])
+    parser.add_argument("--clip_model_id", type=str, default="openai/clip-vit-base-patch16")
     parser.add_argument("--prompt_variant", type=str, default="event", choices=["event", "frame", "random", "none"])
     parser.add_argument("--distill_mode", type=str, default="hybrid", choices=["none", "hard", "soft", "hybrid"])
     parser.add_argument("--lambda_soft", type=float, default=0.4)
@@ -57,12 +71,18 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--num_workers", type=int, default=0)
     parser.add_argument("--out_dir", type=str, default="runs/cater_repro")
+    parser.add_argument("--debug_model_prints", action="store_true")
+    parser.add_argument("--debug_forward_print_steps", type=int, default=1)
+    parser.add_argument("--debug_grad_print_steps", type=int, default=1)
     args = parser.parse_args()
 
     set_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    tokenizer = HashTokenizer()
+    if args.tokenizer == "clip":
+        tokenizer = CLIPTokenizerWrapper(model_id=args.clip_model_id)
+    else:
+        tokenizer = HashTokenizer()
     train_set = VideoQADataset(
         jsonl_path=Path(args.data_dir) / args.train_file,
         tokenizer=tokenizer,
@@ -108,7 +128,29 @@ def main() -> None:
         vocab_size=args.vocab_size,
         image_size=args.image_size,
         max_frames=args.num_frames,
+        clip_model_id=args.clip_model_id,
+        debug=args.debug_model_prints,
+        debug_forward_print_steps=args.debug_forward_print_steps,
     ).to(device)
+    if args.debug_model_prints:
+        print(
+            "[debug:train:init] "
+            f"model_params total={_param_count(model)} trainable={_param_count(model, trainable_only=True)}",
+            flush=True,
+        )
+        print(
+            "[debug:train:init] "
+            f"clip_backbone total={_param_count(model.backbone)} trainable={_param_count(model.backbone, trainable_only=True)}",
+            flush=True,
+        )
+        print(
+            "[debug:train:init] "
+            f"cross_attn trainable={_param_count(model.cross_attn, trainable_only=True)} "
+            f"temporal_adapter trainable={_param_count(model.temporal_adapter, trainable_only=True)} "
+            f"time_pos trainable={int(model.time_pos.numel()) if model.time_pos.requires_grad else 0}",
+            flush=True,
+        )
+
     trainable_params = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.AdamW(trainable_params, lr=args.lr, weight_decay=args.weight_decay)
 
@@ -173,6 +215,16 @@ def main() -> None:
                 loss = loss + args.lambda_soft * mse
 
             loss.backward()
+            if args.debug_model_prints and global_step < args.debug_grad_print_steps:
+                print(
+                    "[debug:train:grad] "
+                    f"step={global_step} "
+                    f"cross_attn.in_proj_weight={_safe_grad_norm(model.cross_attn.in_proj_weight):.6f} "
+                    f"time_pos={_safe_grad_norm(model.time_pos):.6f} "
+                    f"temporal_adapter.layer0.self_attn.in_proj_weight="
+                    f"{_safe_grad_norm(model.temporal_adapter.layers[0].self_attn.in_proj_weight):.6f}",
+                    flush=True,
+                )
             optimizer.step()
             scheduler.step()
 

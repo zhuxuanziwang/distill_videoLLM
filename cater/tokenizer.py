@@ -1,4 +1,5 @@
 import hashlib
+import importlib
 import re
 from dataclasses import dataclass
 
@@ -32,3 +33,26 @@ class HashTokenizer:
         if len(ids) < max_len:
             ids.extend([self.config.pad_id] * (max_len - len(ids)))
         return torch.tensor(ids[:max_len], dtype=torch.long)
+
+
+class CLIPTokenizerWrapper:
+    def __init__(self, model_id: str = "openai/clip-vit-base-patch16", local_files_only: bool = False):
+        try:
+            transformers = importlib.import_module("transformers")
+        except ModuleNotFoundError as e:
+            raise RuntimeError("transformers is required for CLIP tokenizer. Please install requirements.txt.") from e
+
+        auto_tokenizer = getattr(transformers, "AutoTokenizer")
+        self.tokenizer = auto_tokenizer.from_pretrained(model_id, use_fast=True, local_files_only=local_files_only)
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token or self.tokenizer.bos_token
+
+    def encode(self, text: str, max_len: int) -> torch.Tensor:
+        out = self.tokenizer(
+            text,
+            truncation=True,
+            max_length=max_len,
+            padding="max_length",
+            return_tensors="pt",
+        )
+        return out["input_ids"][0].to(torch.long)

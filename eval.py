@@ -5,7 +5,7 @@ from pathlib import Path
 import torch
 from torch.utils.data import DataLoader
 
-from cater import CaTeRMini, HashTokenizer, VideoQADataset, collate_batch
+from cater import CLIPTokenizerWrapper, CaTeRMini, HashTokenizer, VideoQADataset, collate_batch
 
 
 @torch.no_grad()
@@ -39,7 +39,12 @@ def main() -> None:
     ckpt = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
     cfg = ckpt["args"]
 
-    tokenizer = HashTokenizer()
+    tok_kind = cfg.get("tokenizer", "clip")
+    clip_model_id = cfg.get("clip_model_id", "openai/clip-vit-base-patch16")
+    if tok_kind == "clip":
+        tokenizer = CLIPTokenizerWrapper(model_id=clip_model_id)
+    else:
+        tokenizer = HashTokenizer()
     dataset = VideoQADataset(
         jsonl_path=Path(args.data_dir) / args.split_file,
         tokenizer=tokenizer,
@@ -66,6 +71,7 @@ def main() -> None:
         vocab_size=cfg["vocab_size"],
         image_size=cfg["image_size"],
         max_frames=cfg["num_frames"],
+        clip_model_id=clip_model_id,
     ).to(device)
     model.load_state_dict(ckpt["model"], strict=True)
 
